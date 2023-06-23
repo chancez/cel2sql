@@ -9,6 +9,7 @@ import (
 	"github.com/cockscomb/cel2sql/sqltypes"
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/checker/decls"
+	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
 )
 
 var employeeSchema = generic.Schema{
@@ -23,14 +24,14 @@ var employeeSchema = generic.Schema{
 }
 
 func ExampleSimple() {
+	idents := []*exprpb.Decl{decls.NewVar("employee", decls.NewObjectType("Employee"))}
+	sqlTypeProvider := generic.NewTypeProvider(map[string]generic.Schema{
+		"Employee": employeeSchema,
+	}, idents)
 	env, _ := cel.NewEnv(
-		cel.CustomTypeProvider(generic.NewTypeProvider(map[string]generic.Schema{
-			"Employee": employeeSchema,
-		})),
+		cel.CustomTypeProvider(sqlTypeProvider),
 		sqltypes.SQLTypeDeclarations,
-		cel.Declarations(
-			decls.NewVar("employee", decls.NewObjectType("Employee")),
-		),
+		cel.Declarations(idents...),
 	)
 
 	// Convert CEL to SQL
@@ -38,7 +39,7 @@ func ExampleSimple() {
 	if iss.Err() != nil {
 		log.Fatalln(iss.Err())
 	}
-	sqlCondition, err := cel2sql.Convert(ast)
+	sqlCondition, err := cel2sql.ConvertWithMapper(ast, sqlTypeProvider)
 	if err != nil {
 		log.Fatalln(err)
 	}
