@@ -269,15 +269,31 @@ func (con *converter) visitCallConditional(expr *exprpb.Expr) error {
 	return nil
 }
 
-var standardSQLFunctions = map[string]string{
-	operators.Modulo:     "MOD",
-	overloads.StartsWith: "STARTS_WITH",
-	overloads.EndsWith:   "ENDS_WITH",
-	overloads.Matches:    "REGEXP_CONTAINS",
+func (con *converter) callContains(target *exprpb.Expr, args []*exprpb.Expr) error {
+	con.str.WriteString("position(")
+	if target != nil {
+		nested := isBinaryOrTernaryOperator(target)
+		err := con.visitMaybeNested(target, nested)
+		if err != nil {
+			return err
+		}
+		con.str.WriteString(", ")
+	}
+	for i, arg := range args {
+		err := con.visit(arg)
+		if err != nil {
+			return err
+		}
+		if i < len(args)-1 {
+			con.str.WriteString(", ")
+		}
+	}
+	con.str.WriteString(") != 0")
+	return nil
 }
 
-func (con *converter) callContains(target *exprpb.Expr, args []*exprpb.Expr) error {
-	con.str.WriteString("INSTR(")
+func (con *converter) callMatches(target *exprpb.Expr, args []*exprpb.Expr) error {
+	con.str.WriteString("match(")
 	if target != nil {
 		nested := isBinaryOrTernaryOperator(target)
 		err := con.visitMaybeNested(target, nested)
@@ -426,6 +442,36 @@ func (con *converter) callCasting(function string, target *exprpb.Expr, args []*
 	return nil
 }
 
+func (con *converter) callStartsWith(target *exprpb.Expr, args []*exprpb.Expr) error {
+	con.str.WriteString("like(")
+	nested := isBinaryOrTernaryOperator(target)
+	err := con.visitMaybeNested(target, nested)
+	if err != nil {
+		return err
+	}
+	con.str.WriteString(", ")
+	if err := con.visit(args[0]); err != nil {
+		return err
+	}
+	con.str.WriteString(` || "%") != 0`)
+	return nil
+}
+
+func (con *converter) callEndsWith(target *exprpb.Expr, args []*exprpb.Expr) error {
+	con.str.WriteString("like(")
+	nested := isBinaryOrTernaryOperator(target)
+	err := con.visitMaybeNested(target, nested)
+	if err != nil {
+		return err
+	}
+	con.str.WriteString(`, "%" || `)
+	if err := con.visit(args[0]); err != nil {
+		return err
+	}
+	con.str.WriteString(`) != 0`)
+	return nil
+}
+
 func (con *converter) visitCallFunc(expr *exprpb.Expr) error {
 	c := expr.GetCallExpr()
 	fun := c.GetFunction()
@@ -456,24 +502,32 @@ func (con *converter) visitCallFunc(expr *exprpb.Expr) error {
 		overloads.TypeConvertString,
 		overloads.TypeConvertUint:
 		return con.callCasting(fun, target, args)
+	case overloads.StartsWith:
+		return con.callStartsWith(target, args)
+	case overloads.EndsWith:
+		return con.callEndsWith(target, args)
+	case overloads.Matches:
+		return con.callMatches(target, args)
 	}
-	sqlFun, ok := standardSQLFunctions[fun]
-	if !ok {
-		if fun == overloads.Size {
-			argType := con.getType(args[0])
-			switch {
-			case argType.GetPrimitive() == exprpb.Type_STRING:
-				sqlFun = "LENGTH"
-			case argType.GetPrimitive() == exprpb.Type_BYTES:
-				sqlFun = "LENGTH"
-			case isListType(argType):
-				sqlFun = "ARRAY_LENGTH"
-			default:
-				return fmt.Errorf("unsupported type: %v", argType)
-			}
-		} else {
-			sqlFun = strings.ToUpper(fun)
+	// SQL functions
+	var sqlFun string
+	switch fun {
+	case overloads.Size:
+		argType := con.getType(args[0])
+		switch {
+		case argType.GetPrimitive() == exprpb.Type_STRING:
+			sqlFun = "LENGTH"
+		case argType.GetPrimitive() == exprpb.Type_BYTES:
+			sqlFun = "LENGTH"
+		case isListType(argType):
+			sqlFun = "LENGTH"
+		default:
+			return fmt.Errorf("unsupported type: %v", argType)
 		}
+	case operators.Modulo:
+		sqlFun = "modulo"
+	default:
+		sqlFun = strings.ToUpper(fun)
 	}
 	con.str.WriteString(sqlFun)
 	con.str.WriteString("(")

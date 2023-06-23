@@ -51,43 +51,43 @@ func TestConvert(t *testing.T) {
 		{
 			name:    "startsWith",
 			args:    args{source: `name.startsWith("a")`},
-			want:    "STARTS_WITH(`name`, \"a\")",
+			want:    "like(`name`, \"a\" || \"%\") != 0",
 			wantErr: false,
 		},
 		{
 			name:    "endsWith",
 			args:    args{source: `name.endsWith("z")`},
-			want:    "ENDS_WITH(`name`, \"z\")",
+			want:    "like(`name`, \"%\" || \"z\") != 0",
 			wantErr: false,
 		},
 		{
 			name:    "matches",
 			args:    args{source: `name.matches("a+")`},
-			want:    "REGEXP_CONTAINS(`name`, \"a+\")",
+			want:    "match(`name`, \"a+\") != 0",
 			wantErr: false,
 		},
 		{
 			name:    "contains",
 			args:    args{source: `name.contains("abc")`},
-			want:    "INSTR(`name`, \"abc\") != 0",
+			want:    "position(`name`, \"abc\") != 0",
 			wantErr: false,
 		},
 		{
 			name:    "&&",
-			args:    args{source: `name.startsWith("a") && name.endsWith("z")`},
-			want:    "STARTS_WITH(`name`, \"a\") AND ENDS_WITH(`name`, \"z\")",
+			args:    args{source: `true && false`},
+			want:    "TRUE AND FALSE",
 			wantErr: false,
 		},
 		{
 			name:    "||",
-			args:    args{source: `name.startsWith("a") || name.endsWith("z")`},
-			want:    "STARTS_WITH(`name`, \"a\") OR ENDS_WITH(`name`, \"z\")",
+			args:    args{source: `false || true`},
+			want:    "FALSE OR TRUE",
 			wantErr: false,
 		},
 		{
 			name:    "()",
-			args:    args{source: `age >= 10 && (name.startsWith("a") || name.endsWith("z"))`},
-			want:    "`age` >= 10 AND (STARTS_WITH(`name`, \"a\") OR ENDS_WITH(`name`, \"z\"))",
+			args:    args{source: `age >= 10 && (false || true)`},
+			want:    "`age` >= 10 AND (FALSE OR TRUE)",
 			wantErr: false,
 		},
 		{
@@ -201,7 +201,7 @@ func TestConvert(t *testing.T) {
 		{
 			name:    "modulo",
 			args:    args{source: `5 % 3 == 2`},
-			want:    "MOD(5, 3) = 2",
+			want:    "modulo(5, 3) = 2",
 			wantErr: false,
 		},
 		{
@@ -345,7 +345,7 @@ func TestConvert(t *testing.T) {
 		{
 			name:    "fieldSelect_startsWith",
 			args:    args{source: `page.title.startsWith("test")`},
-			want:    "STARTS_WITH(`page`.`title`, \"test\")",
+			want:    "like(`page`.`title`, \"test\" || \"%\") != 0",
 			wantErr: false,
 		},
 		{
@@ -417,7 +417,7 @@ func TestConvert(t *testing.T) {
 		{
 			name:    "size_list",
 			args:    args{source: `size(string_list)`},
-			want:    "ARRAY_LENGTH(`string_list`)",
+			want:    "LENGTH(`string_list`)",
 			wantErr: false,
 		},
 	}
