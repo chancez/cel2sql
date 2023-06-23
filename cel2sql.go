@@ -656,7 +656,7 @@ func (con *converter) visitConst(expr *exprpb.Expr) error {
 	case *exprpb.Constant_NullValue:
 		con.str.WriteString("NULL")
 	case *exprpb.Constant_StringValue:
-		con.str.WriteString(strconv.Quote(c.GetStringValue()))
+		con.str.WriteString("'" + c.GetStringValue() + "'")
 	case *exprpb.Constant_Uint64Value:
 		ui := strconv.FormatUint(c.GetUint64Value(), 10)
 		con.str.WriteString(ui)

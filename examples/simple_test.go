@@ -44,5 +44,5 @@ func ExampleSimple() {
 		log.Fatalln(err)
 	}
 	fmt.Println(sqlCondition)
-	// Output: `employee`.`name` = "John Doe" AND `employee`.`hired_at` >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 24 HOUR)
+	// Output: `employee`.`name` = 'John Doe' AND `employee`.`hired_at` >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 24 HOUR)
 }
