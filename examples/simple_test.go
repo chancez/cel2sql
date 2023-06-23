@@ -8,30 +8,32 @@ import (
 	"github.com/cockscomb/cel2sql/generic"
 	"github.com/cockscomb/cel2sql/sqltypes"
 	"github.com/google/cel-go/cel"
-	"github.com/google/cel-go/checker/decls"
-	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
 )
 
-var employeeSchema = generic.Schema{
-	{
-		Name: "name",
-		Type: generic.StringFieldType,
-	},
-	{
-		Name: "hired_at",
-		Type: generic.TimestampFieldType,
+var employeeSchema = &generic.Schema{
+	TableName:    "employees",
+	VariableName: "employee",
+	ObjectType:   "Employee",
+	Fields: []*generic.FieldSchema{
+		{
+			Name: "name",
+			Type: generic.StringFieldType,
+		},
+		{
+			Name: "hired_at",
+			Type: generic.TimestampFieldType,
+		},
 	},
 }
 
 func ExampleSimple() {
-	idents := []*exprpb.Decl{decls.NewVar("employee", decls.NewObjectType("Employee"))}
-	sqlTypeProvider := generic.NewTypeProvider(map[string]generic.Schema{
-		"Employee": employeeSchema,
-	}, idents)
+	sqlTypeProvider := generic.NewTypeProvider([]*generic.Schema{
+		employeeSchema,
+	})
 	env, _ := cel.NewEnv(
 		cel.CustomTypeProvider(sqlTypeProvider),
 		sqltypes.SQLTypeDeclarations,
-		cel.Declarations(idents...),
+		cel.Declarations(sqlTypeProvider.Declarations()...),
 	)
 
 	// Convert CEL to SQL
@@ -44,5 +46,5 @@ func ExampleSimple() {
 		log.Fatalln(err)
 	}
 	fmt.Println(sqlCondition)
-	// Output: `employee`.`name` = 'John Doe' AND `employee`.`hired_at` >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 24 HOUR)
+	// Output: `employees`.`name` = 'John Doe' AND `employees`.`hired_at` >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 24 HOUR)
 }

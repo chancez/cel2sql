@@ -25,7 +25,12 @@ const (
 	DateTimeFieldType  FieldType = "datetime"
 )
 
-type Schema []*FieldSchema
+type Schema struct {
+	TableName    string
+	VariableName string
+	ObjectType   string
+	Fields       []*FieldSchema
+}
 
 type FieldSchema struct {
 	Name       string
@@ -38,16 +43,19 @@ type FieldSchema struct {
 }
 
 type typeProvider struct {
-	schemas map[string]Schema
+	schemas map[string]*Schema
 	idents  map[string]*exprpb.Decl
 }
 
-func NewTypeProvider(schemas map[string]Schema, idents []*exprpb.Decl) *typeProvider {
-	identsMap := make(map[string]*exprpb.Decl)
-	for _, id := range idents {
-		identsMap[id.GetName()] = id
+func NewTypeProvider(schemaList []*Schema) *typeProvider {
+	schemas := make(map[string]*Schema)
+	idents := make(map[string]*exprpb.Decl)
+	for _, schema := range schemaList {
+		schemas[schema.ObjectType] = schema
+		ident := decls.NewVar(schema.VariableName, decls.NewObjectType(schema.ObjectType))
+		idents[ident.GetName()] = ident
 	}
-	return &typeProvider{schemas: schemas, idents: identsMap}
+	return &typeProvider{schemas: schemas, idents: idents}
 }
 
 func (p *typeProvider) EnumValue(enumName string) ref.Val {
@@ -56,6 +64,23 @@ func (p *typeProvider) EnumValue(enumName string) ref.Val {
 
 func (p *typeProvider) FindIdent(identName string) (ref.Val, bool) {
 	return nil, false
+}
+
+func (p *typeProvider) TableName(expr *exprpb.Expr_Ident) string {
+	// get the variable name being selected on
+	operandName := expr.GetName()
+	// translate the variable name to it's Schema name
+	ident := p.idents[operandName]
+	messageType := ident.GetIdent().GetType().GetMessageType()
+	// Lookup the schema from the messageType
+	schema, found := p.findSchema(messageType)
+	if !found {
+		return operandName
+	}
+	if schema.TableName != "" {
+		return schema.TableName
+	}
+	return schema.VariableName
 }
 
 func (p *typeProvider) ColumnName(sel *exprpb.Expr_Select) string {
@@ -81,7 +106,15 @@ func (p *typeProvider) ColumnName(sel *exprpb.Expr_Select) string {
 	return field.Name
 }
 
-func (p *typeProvider) findSchema(typeName string) (Schema, bool) {
+func (p *typeProvider) Declarations() []*exprpb.Decl {
+	var idents []*exprpb.Decl
+	for _, ident := range p.idents {
+		idents = append(idents, ident)
+	}
+	return idents
+}
+
+func (p *typeProvider) findSchema(typeName string) (*Schema, bool) {
 	typeNames := strings.Split(typeName, ".")
 	schema, found := p.schemas[typeNames[0]]
 	if !found {
@@ -89,7 +122,7 @@ func (p *typeProvider) findSchema(typeName string) (Schema, bool) {
 	}
 	for _, tn := range typeNames[1:] {
 		var s *Schema
-		for _, fieldSchema := range schema {
+		for _, fieldSchema := range schema.Fields {
 			if fieldSchema.Name == tn {
 				s = &fieldSchema.Schema
 				break
@@ -98,14 +131,14 @@ func (p *typeProvider) findSchema(typeName string) (Schema, bool) {
 		if s == nil {
 			return nil, false
 		}
-		schema = *s
+		schema = s
 	}
 	return schema, true
 }
 
-func (p *typeProvider) findField(schema Schema, fieldName string) (*FieldSchema, bool) {
+func (p *typeProvider) findField(schema *Schema, fieldName string) (*FieldSchema, bool) {
 	var field *FieldSchema
-	for _, fieldSchema := range schema {
+	for _, fieldSchema := range schema.Fields {
 		if fieldSchema.Name == fieldName {
 			field = fieldSchema
 			break

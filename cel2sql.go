@@ -10,13 +10,14 @@ import (
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/common/operators"
 	"github.com/google/cel-go/common/overloads"
-	expr "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
 	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
 )
 
 type NameMapper interface {
+	// Convert a object name into a table name
+	TableName(*exprpb.Expr_Ident) string
 	// Convert a field name into a column name
-	ColumnName(*expr.Expr_Select) string
+	ColumnName(*exprpb.Expr_Select) string
 }
 
 // Implementations based on `google/cel-go`'s unparser
@@ -668,7 +669,12 @@ func (con *converter) visitConst(expr *exprpb.Expr) error {
 
 func (con *converter) visitIdent(expr *exprpb.Expr) error {
 	con.str.WriteString("`")
-	con.str.WriteString(expr.GetIdentExpr().GetName())
+	ident := expr.GetIdentExpr()
+	tableName := ident.GetName()
+	if con.mapper != nil {
+		tableName = con.mapper.TableName(ident)
+	}
+	con.str.WriteString(tableName)
 	con.str.WriteString("`")
 	return nil
 }
