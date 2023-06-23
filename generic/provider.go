@@ -28,8 +28,9 @@ const (
 type Schema []*FieldSchema
 
 type FieldSchema struct {
-	Name string
-	Type FieldType
+	Name       string
+	ColumnName string
+	Type       FieldType
 	// Array type
 	Repeated bool
 	// TODO: support for nested record types
@@ -38,10 +39,15 @@ type FieldSchema struct {
 
 type typeProvider struct {
 	schemas map[string]Schema
+	idents  map[string]*exprpb.Decl
 }
 
-func NewTypeProvider(schemas map[string]Schema) *typeProvider {
-	return &typeProvider{schemas: schemas}
+func NewTypeProvider(schemas map[string]Schema, idents []*exprpb.Decl) *typeProvider {
+	identsMap := make(map[string]*exprpb.Decl)
+	for _, id := range idents {
+		identsMap[id.GetName()] = id
+	}
+	return &typeProvider{schemas: schemas, idents: identsMap}
 }
 
 func (p *typeProvider) EnumValue(enumName string) ref.Val {
@@ -50,6 +56,29 @@ func (p *typeProvider) EnumValue(enumName string) ref.Val {
 
 func (p *typeProvider) FindIdent(identName string) (ref.Val, bool) {
 	return nil, false
+}
+
+func (p *typeProvider) ColumnName(sel *exprpb.Expr_Select) string {
+	// get the variable name being selected on
+	operandName := sel.GetOperand().GetIdentExpr().GetName()
+	// get the field on the variable being queried
+	fieldName := sel.GetField()
+	// translate the variable name to it's Schema name
+	ident := p.idents[operandName]
+	messageType := ident.GetIdent().GetType().GetMessageType()
+	// Lookup the schema from the messageType
+	schema, found := p.findSchema(messageType)
+	if !found {
+		return fieldName
+	}
+	field, ok := p.findField(schema, fieldName)
+	if !ok {
+		return fieldName
+	}
+	if field.ColumnName != "" {
+		return field.ColumnName
+	}
+	return field.Name
 }
 
 func (p *typeProvider) findSchema(typeName string) (Schema, bool) {
@@ -74,6 +103,20 @@ func (p *typeProvider) findSchema(typeName string) (Schema, bool) {
 	return schema, true
 }
 
+func (p *typeProvider) findField(schema Schema, fieldName string) (*FieldSchema, bool) {
+	var field *FieldSchema
+	for _, fieldSchema := range schema {
+		if fieldSchema.Name == fieldName {
+			field = fieldSchema
+			break
+		}
+	}
+	if field == nil {
+		return nil, false
+	}
+	return field, true
+}
+
 func (p *typeProvider) FindType(typeName string) (*exprpb.Type, bool) {
 	_, found := p.findSchema(typeName)
 	if !found {
@@ -87,14 +130,8 @@ func (p *typeProvider) FindFieldType(messageType string, fieldName string) (*ref
 	if !found {
 		return nil, false
 	}
-	var field *FieldSchema
-	for _, fieldSchema := range schema {
-		if fieldSchema.Name == fieldName {
-			field = fieldSchema
-			break
-		}
-	}
-	if field == nil {
+	field, ok := p.findField(schema, fieldName)
+	if !ok {
 		return nil, false
 	}
 	var typ *exprpb.Type

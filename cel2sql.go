@@ -10,19 +10,30 @@ import (
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/common/operators"
 	"github.com/google/cel-go/common/overloads"
+	expr "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
 	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
 )
+
+type NameMapper interface {
+	// Convert a field name into a column name
+	ColumnName(*expr.Expr_Select) string
+}
 
 // Implementations based on `google/cel-go`'s unparser
 // https://github.com/google/cel-go/blob/master/parser/unparser.go
 
 func Convert(ast *cel.Ast) (string, error) {
+	return ConvertWithMapper(ast, nil)
+}
+
+func ConvertWithMapper(ast *cel.Ast, nm NameMapper) (string, error) {
 	checkedExpr, err := cel.AstToCheckedExpr(ast)
 	if err != nil {
 		return "", err
 	}
 	un := &converter{
 		typeMap: checkedExpr.TypeMap,
+		mapper:  nm,
 	}
 	if err := un.visit(checkedExpr.Expr); err != nil {
 		return "", err
@@ -31,6 +42,7 @@ func Convert(ast *cel.Ast) (string, error) {
 }
 
 type converter struct {
+	mapper  NameMapper
 	str     strings.Builder
 	typeMap map[int64]*exprpb.Type
 }
@@ -690,7 +702,11 @@ func (con *converter) visitSelect(expr *exprpb.Expr) error {
 		return err
 	}
 	con.str.WriteString(".`")
-	con.str.WriteString(sel.GetField())
+	column := sel.GetField()
+	if con.mapper != nil {
+		column = con.mapper.ColumnName(sel)
+	}
+	con.str.WriteString(column)
 	con.str.WriteString("`")
 	if sel.GetTestOnly() {
 		con.str.WriteString(")")
